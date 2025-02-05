@@ -1,0 +1,286 @@
+---
+title: "rayan_final"
+output: html_document
+date: "2024-04-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(viridis)
+library(ade4)
+library(adegraphics)
+library(FactoMineR)
+library(factoextra)
+library(ggfortify)
+library(ggpubr)
+library(see)
+library(modelbased)
+```
+
+## I. Import des données
+
+```{r}
+data_2024 <- read_csv(
+  "data/raw_data.csv",
+  col_names = T,
+  col_types = "Dtfffffffiiiiiifididdi",
+  col_select = c(-23)
+  ) |> na.omit()
+
+#On crée une colonne qui vaut 1 si on a vu l'oiseau (donc si la latence n'est pas de 10000) et 0 sinon
+data_2024 <- data_2024 |> mutate(LATENCE_BINAIRE=ifelse(LATENCE==10000,0,1),
+                       .after=c(12))
+
+#On majore la distance par 50
+data_2024 <- data_2024 |> mutate(DISTANCE_MAJOREE=ifelse(
+                       DISTANCE_MIN==10000,50,DISTANCE_MIN),
+                       .after=c(11))
+
+#On simplifie les dates des jours
+data_2024 <- data_2024 |> mutate(JOUR=as.factor(day(JOUR)-8),
+                       .after=c(1))
+
+#On crée une colonne qui discrimine les observations du matin et de l'après-midi
+data_2024 <- data_2024 |> mutate(MATIN_APREM = factor(ifelse(HEURE<hms("12:30:00"), 0, 1),
+                                            labels=c("Matin",
+                                                     "Aprem")),
+                       .after = c(2))
+
+data_2023 <- read_csv(
+  "data/data_oiseaux_2023.csv", 
+  col_names=TRUE,
+  col_types = "ftfffffffiiiiiifididdi",
+  col_select = c(-23)
+  ) %>% na.omit()
+
+
+data_2023 <- data_2023 |> mutate(LATENCE_BINAIRE=ifelse(LATENCE==180,0,1),
+                       .after=c(12))
+
+data_2023 <- data_2023 |> mutate(DISTANCE_MAJOREE=ifelse(
+                       DISTANCE_MIN==10000,50,DISTANCE_MIN),
+                       .after=c(11))
+
+data_2023 <- data_2023 |> mutate(MATIN_APREM = factor(ifelse(HEURE<hms("12:30:00"), 0, 1),
+                                            labels=c("Matin",
+                                                     "Aprem")),
+                       .after = c(2))
+
+data <- rbind(data_2024,data_2023) #Jeu de données combinant les deux années
+
+data_reponse <- data |> filter(LATENCE<180) #Jeu de données avec seulement les oiseaux ayant répondu
+
+data_nreponse <- data |> filter(LATENCE>=180) #Jeu de données avec seulement les oiseaux n'ayant pas répondu
+```
+
+## I.B. ACP sur les oiseaux qui ont répondu
+
+Comme notre première ACP est trop sous l'influence du cluster d'oiseaux n'ayant pas répondu, on décide de réaliser la même ACP mais sur le jeu de données réduit contenant seulement les oiseaux ayant répondu
+
+```{r}
+ACP_reponse_intensite <- dudi.pca(data_reponse[,c(13,14,16,17,18)], center = T, scale = T, scannf=FALSE, nf = 2)
+
+s.corcircle(ACP_reponse_intensite$co, xax = 1, yax = 2) #On représente le plan avec les deux composantes expliquant le plus les variations de réponse des oiseaux
+
+fviz_screeplot(ACP_reponse_intensite, addlabels = TRUE, ylim = c(0, 70)) #On représente à quel point chacune des composantes de l'ACP explique les variations de réponse
+
+```
+
+Les axes de l'ACP sont peu corrélés aux différentes variables, ce qui rend l'interprétation très compliquée. De plus, la pc1 n'explique que 30% de la variance donc on ne peux pas l'utiliser comme proxy de l'activité.
+
+## III.A. Intensite de reponse en fonction des jours
+
+On veut tester l'effet du jour sur l'intensité de la réponse, donc on utilise les données des oiseaux ayant répondu.
+
+```{r}
+#Effet jour sur la distance
+ggplot(data_reponse) + geom_boxplot(aes(x=as.factor(JOUR), y=DISTANCE_MAJOREE)) +
+  labs(x="Jour",y="Distance à l'enceinte",title = "Effet Jour sur la distance")+
+  theme_minimal()
+
+#Effet jour sur la latence
+ggplot(data_reponse) + geom_boxplot(aes(x=as.factor(JOUR), y=LATENCE)) +
+  labs(x="Jour",y="Latence de réponse",title = "Effet Jour sur la latence")+
+  theme_minimal()
+
+#Effet jour sur les chants
+ggplot(data_reponse) + geom_boxplot(aes(x=as.factor(JOUR), y=STROPHES_APRES)) +
+  labs(x="Jour",y="Nombre de strophes après diffusion",
+       title = "Effet Jour sur les chants")+
+  theme_minimal()
+
+#Effet jour sur les cris
+ggplot(data_reponse) + geom_boxplot(aes(x=as.factor(JOUR), y=CRIS)) +
+  labs(x="Jour",y="Nombre de cris",title = "Effet Jour sur les cris")+
+  theme_minimal()
+
+#Effet jour sur les survols
+ggplot(data_reponse) + geom_boxplot(aes(x=as.factor(JOUR), y=SURVOLS)) +
+  labs(x="Jour",y="Nombre de survols",title = "Effet Jour sur les survols")+
+  theme_minimal()
+```
+
+On n'observe pas de tendance d'atténuation de l'intensité de la réponse avec les jours. On n'observe donc pas d'accoutumance des oiseaux avec le temps.
+
+## III.C. Reponse de chacun des mâles
+
+### Réponse binaire de chacun des mâles
+
+```{r}
+reponse_males <- data.frame(ID_MALE=c(1:11),
+                            REPONSE=c(mean(filter(data,ID_MALE==1)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==2)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==3)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==4)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==5)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==6)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==7)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==8)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==9)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==10)$LATENCE_BINAIRE),
+                                      mean(filter(data,ID_MALE==11)$LATENCE_BINAIRE)
+                                      ))
+
+ggplot(reponse_males) + geom_col(aes(x=ID_MALE ,y=REPONSE)) +
+  labs(x="Mâle",y="Taux de réponse",title="Taux de réponse des différents mâles")
+```
+
+On observe que les mâles ont tous entre 50 et 80% de taux de réponse à part le mâle 9 qui a environ 30% de taux de réponse. On décide donc de réaliser un test statistique pour évaluer la différence de réponse des mâles. La réponse étant ici considérée binaire, on réalise un modèle linéaire généralisé avec une loi binomiale pour le test statistique.
+
+```{r}
+test_male <- glm(LATENCE_BINAIRE~ID_MALE,data=data,family = binomial)
+plot(test_male)
+summary(test_male)
+```
+
+On observe que seul le mâle 9 répond significativement moins que les autres ($p-value<0.05$). De plus, avec un seuil $\alpha=10\%$, on peut conclure que le mâle 8 répond significativement plus que les autres.
+
+### Intensité de réponse de chacun des mâles
+
+Après avoir testé la réponse binaire des différents mâle, on cherche à tester l'intensité de leurs réponses. Pour cela, on utilise les données des oiseaux ayant répondu, donc le tableau `data_reponse`.
+
+```{r}
+#Effet mâle sur la distance
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=DISTANCE_MAJOREE)) +
+  labs(x="Mâle",title = "Effet mâle sur la distance")+
+  theme_minimal()
+
+#Effet mâle sur la latence
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=LATENCE)) +
+  labs(x="Mâle",title = "Effet mâle sur la latence")+
+  theme_minimal()
+
+#Effet mâle sur les chants
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=STROPHES_APRES)) +
+  labs(x="Mâle",title = "Effet mâle sur les chants")+
+  theme_minimal()
+
+#Effet mâle sur les cris
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=CRIS)) +
+  labs(x="Mâle",title = "Effet mâle sur les cris")+
+  theme_minimal()
+
+#Effet mâle sur les survols
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=SURVOLS)) +
+  labs(x="Mâle",title = "Effet mâle sur les survols")+
+  theme_minimal()
+```
+
+On observe des disparités de réponse entre les mâles, mais on n'observe pas de mâle qui répondrait considérablement plus ou moins que les autres sur tous les critères d'activité. Les disparités semblent plutôt aléatoirement distribuées parmi les mâles et les critères d'activité.
+On cherche maintenant à tester statistiquement ces différences.
+
+#### Test statistique de l'effet mâle sur les cris
+
+```{r}
+test_male_cris <- glm(CRIS~ID_MALE,data=data_reponse,
+                      family = poisson) 
+#On réalise un modèle linéaire généralisé avec loi de Poisson car les cris suivent une loi de comptage
+plot(test_male_cris)
+summary(test_male_cris)
+
+#On calcule un pseudo R² afin d'estimer la part de variance expliquée par l'effet mâle
+pseudoR2 <- (test_male_cris$null.deviance - test_male_cris$deviance) / test_male_cris$null.deviance
+print(paste("L'effet mâle explique",
+            round(100*pseudoR2,1),
+            "% de la variance des cris"))
+```
+
+On observe que quasiment tous les mâles sont statistiquement différents les uns des autres en ce qui concerne le nombre de cris. 
+De plus, le calcul du pseudo R² nous permet d'observer que l'effet mâle explique 32.5% de la variance des cris, ce qui est très important.
+
+#### Test statistique de l'effet mâle sur les chants
+
+```{r}
+test_male_chants <- glm(STROPHES_APRES~ID_MALE,data=data_reponse,
+                      family = poisson)
+plot(test_male_chants)
+summary(test_male_chants)
+
+pseudoR2 <- (test_male_chants$null.deviance - test_male_chants$deviance) / test_male_chants$null.deviance
+print(paste("L'effet mâle explique",
+            round(100*pseudoR2,1),
+            "% de la variance des chants"))
+```
+
+On observe que la plupart des mâles sont statistiquement différents les uns des autres en ce qui concerne le nombre de chants. 
+De plus, le calcul du pseudo R² nous permet d'observer que l'effet mâle explique 15.9% de la variance des chants, ce qui est non négligable.
+
+#### Test statistique de l'effet mâle sur les survols
+
+```{r}
+test_male_survols <- glm(SURVOLS~ID_MALE,data=data_reponse,
+                      family = poisson)
+plot(test_male_survols)
+summary(test_male_survols)
+
+pseudoR2 <- (test_male_survols$null.deviance - test_male_survols$deviance) / test_male_survols$null.deviance
+print(paste("L'effet mâle explique",
+            round(100*pseudoR2,1),
+            "% de la variance des survols"))
+```
+
+On observe que seulement quelques mâles sont statistiquement différents les uns des autres en ce qui concerne le nombre de survols. 
+De plus, le calcul du pseudo R² nous permet d'observer que l'effet mâle explique 7.9% de la variance des chants, ce qui est assez faible.
+
+#### Test statistique de l'effet mâle sur la latence
+
+```{r}
+test_male_latence <- glm(LATENCE~ID_MALE,data=data_reponse,
+                      family = poisson)
+plot(test_male_latence)
+summary(test_male_latence)
+
+pseudoR2 <- (test_male_latence$null.deviance - test_male_latence$deviance) / test_male_latence$null.deviance
+print(paste("L'effet mâle explique",
+            round(100*pseudoR2,1),
+            "% de la variance de la latence"))
+```
+
+On observe que la plupart des mâles sont statistiquement différents les uns des autres en ce qui concerne le nombre de chants. 
+De plus, le calcul du pseudo R² nous permet d'observer que l'effet mâle explique 25.9% de la variance de la latence, ce qui est important.
+
+#### Test statistique de l'effet mâle sur la distance à l'enceinte
+
+```{r}
+test_male_distance <- glm(DISTANCE_MAJOREE~ID_MALE,data=data_reponse,
+                      family = poisson)
+plot(test_male_distance)
+summary(test_male_distance)
+
+pseudoR2 <- (test_male_distance$null.deviance - test_male_distance$deviance) / test_male_distance$null.deviance
+print(paste("L'effet mâle explique",
+            round(100*pseudoR2,1),
+            "% de la variance de la distance à l'enceinte"))
+```
+
+On observe que la plupart des mâles sont statistiquement différents les uns des autres en ce qui concerne le nombre de chants. 
+De plus, le calcul du pseudo R² nous permet d'observer que l'effet mâle explique 19.9% de la variance de la distance à l'enceinte, ce qui est non négligable.
+
+On peut conclure de ces tests statistiques que l'effet mâle est un facteur important de la variance de l'intensité de la réponse des oiseaux. Certains mâles poussent plus de cris, d'autres chantent plus, ont plus ou moins tendance à se rapprocher et à survoler l'enceinte.
+
+On propose donc d'utiliser un modèle mixte afin de prendre en compte l'effet mâle dans les tests statistiques suivants.
+

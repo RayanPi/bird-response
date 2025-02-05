@@ -1,0 +1,306 @@
+---
+title: "markdown_oiseau"
+output: html_document
+date: "2024-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(here)
+library(tidyverse)
+library(viridis)
+library(ade4)
+library(adegraphics)
+library(FactoMineR)
+library(factoextra)
+library(ggfortify)
+library(ggpubr)
+library(see)
+library(modelbased)
+```
+
+On crée le tableau de données à partir du fichier csv.
+
+```{r}
+data_tot <- read_csv(
+  "data/raw_data.csv",
+  col_names = T,
+  col_types = "Dtfffffffiiiiiifididdi",
+  col_select = c(-23)
+  ) |> na.omit()
+
+data_tot <- data_tot |> mutate(LATENCE_BINAIRE=ifelse(LATENCE==10000,0,1),
+                       .after=c(12))
+data_tot <- data_tot |> mutate(DISTANCE_MAJOREE=ifelse(
+                       DISTANCE_MIN==10000,50,DISTANCE_MIN),
+                       .after=c(11))
+
+data_tot <- data_tot |> mutate(JOUR=as.factor(day(JOUR)-8),
+                       .after=c(1))
+
+data_2023 <- read_csv(
+  "data/data_oiseaux_2023.csv", 
+  col_names=TRUE,
+  col_types = "ftfffffffiiiiiifididdi",
+  col_select = c(-23)
+  ) %>% na.omit()
+
+data_2023 <- data_2023 |> mutate(LATENCE_BINAIRE=ifelse(LATENCE==10000,0,1),
+                       .after=c(12))
+data_2023 <- data_2023 |> mutate(DISTANCE_MAJOREE=ifelse(
+                       DISTANCE_MIN==10000,50,DISTANCE_MIN),
+                       .after=c(11))
+
+data_tot <- rbind(data_tot,data_2023)
+
+data_tot_bis <- data_tot |> filter(LATENCE!=10000)
+```
+
+
+
+On représente l'intensité de réponse des oiseaux en fonction de différents facteurs
+
+```{r}
+#Effet mâle
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=DISTANCE_MAJOREE)) +
+  labs(x="Mâle",title = "Effet mâle sur la distance")+
+  theme_minimal()
+
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=LATENCE)) +
+  labs(x="Mâle",title = "Effet mâle sur la latence")+
+  theme_minimal()
+
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=STROPHES_APRES)) +
+  labs(x="Mâle",title = "Effet mâle sur les chants")+
+  theme_minimal()
+
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=CRIS)) +
+  labs(x="Mâle",title = "Effet mâle sur les cris")+
+  theme_minimal()
+
+ggplot(data_reponse) + geom_boxplot(aes(x=factor(ID_MALE,c(1:11)), y=SURVOLS)) +
+  labs(x="Mâle",title = "Effet mâle sur les survols")+
+  theme_minimal()
+```
+
+```{r}
+#Effet jour
+ggplot(data_tot_bis) + geom_boxplot(aes(x=as.factor(JOUR), y=DISTANCE_MAJOREE)) +
+  labs(x="Jour",title = "Effet Jour sur la distance")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=as.factor(JOUR), y=LATENCE)) +
+  labs(x="Jour",title = "Effet Jour sur la latence")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=as.factor(JOUR), y=STROPHES_APRES)) +
+  labs(x="Jour",title = "Effet Jour sur les chants")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=as.factor(JOUR), y=CRIS)) +
+  labs(x="Jour",title = "Effet Jour sur les cris")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=as.factor(JOUR), y=SURVOLS)) +
+  labs(x="Jour",title = "Effet Jour sur les survols")+
+  theme_minimal()
+```
+
+```{r}
+#Effet vu
+ggplot(data_tot_bis) + geom_boxplot(aes(x=VU, y=DISTANCE_MAJOREE)) +
+  labs(title = "Effet VU sur la distance")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=VU, y=LATENCE)) +
+  labs(title = "Effet VU sur la latence")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=VU, y=STROPHES_APRES)) +
+  labs(title = "Effet VU sur les chants")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=VU, y=CRIS)) +
+  labs(title = "Effet VU sur les cris")+
+  theme_minimal()
+
+ggplot(data_tot_bis) + geom_boxplot(aes(x=VU, y=SURVOLS)) +
+  labs(title = "Effet VU sur les survols")+
+  theme_minimal()
+```
+
+```{r}
+#Effet diffusion
+ggplot(data_tot) + geom_boxplot(aes(x=DIFFUSION, y=pc1_response)) +
+  labs(title = "Effet diffusion")+
+  theme_minimal()
+```
+
+
+##Test de l'effet mâle sur la réponse binaire
+```{r}
+data_male1 <- data_tot |> filter(ID_MALE==1)
+data_male2 <- data_tot |> filter(ID_MALE==2)
+data_male3 <- data_tot |> filter(ID_MALE==3)
+data_male4 <- data_tot |> filter(ID_MALE==4)
+data_male5 <- data_tot |> filter(ID_MALE==5)
+
+reponse_males <- data.frame(ID_MALE=c(1:5),
+                            REPONSE=c(mean(data_male1$LATENCE_BINAIRE),
+                                      mean(data_male2$LATENCE_BINAIRE),
+                                      mean(data_male3$LATENCE_BINAIRE),
+                                      mean(data_male4$LATENCE_BINAIRE),
+                                      mean(data_male5$LATENCE_BINAIRE)))
+
+ggplot(reponse_males) + geom_col(aes(x=ID_MALE ,y=REPONSE))
+```
+Test statistique effet mâle sur réponse binaire
+```{r}
+test_male <- glm(LATENCE_BINAIRE~ID_MALE,data=data,family = binomial)
+plot(test_male)
+summary(test_male)
+```
+
+
+Test statistique effet mâle sur l'intensité de la réponse
+```{r}
+test_male_cris <- glm(CRIS~ID_MALE,data=data_reponse,family = poisson)
+plot(test_male_cris)
+summary(test_male_cris)
+
+pseudoR2 <- (test_male_cris$null.deviance - test_male_cris$deviance) / test_male_cris$null.deviance
+print(paste("L'effet mâle explique",
+            round(100*pseudoR2,1),
+            "% de la variance des cris"))
+
+test_male_survols <- glm(SURVOLS~ID_MALE,data=data_tot_bis,family = poisson)
+plot(test_male)
+summary(test_male)
+
+
+test_male_chant <- glm(STROPHES_APRES~ID_MALE,data=data_tot_bis,family = poisson)
+plot(test_male)
+summary(test_male)
+
+
+test_male_latence <- glm(LATENCE~ID_MALE,data=data_tot_bis,family = poisson)
+plot(test_male)
+summary(test_male)
+
+```
+
+
+#Waypoint
+
+
+
+
+
+
+Distribution de la réponse pc1 pour chaque mâle
+
+```{r}
+data_tot |> filter(ID_MALE=="1") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 1")+
+  ylim(0,16)
+data_tot |> filter(ID_MALE=="2") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 2")+
+  ylim(0,16)
+data_tot |> filter(ID_MALE=="3") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 3")+
+  ylim(0,16)
+data_tot |> filter(ID_MALE=="4") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 4")+
+  ylim(0,16)
+data_tot |> filter(ID_MALE=="5") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 5")+
+  ylim(0,16)
+```
+ANOVA selon le mâle
+
+```{r}
+anova_reponse_male <- lm(pc1_response~ID_MALE,data_tot=data_tot)
+plot(anova_reponse_male)
+summary(anova_reponse_male)
+kruskal.test(pc1_response~ID_MALE,data_tot=data_tot) #test paramétrique
+bartlett.test(data_tot$pc1_response,data_tot$ID_MALE) #vérifie l'homoscédasticité
+estimate_contrasts(anova_reponse_male,p_adjust="none") #analyse par contraste
+```
+
+Distribution de la réponse pc1 pour chaque jour
+
+```{r}
+data_tot |> filter(JOUR==ymd("2024-04-09")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 1")+
+  ylim(0,20)
+data_tot |> filter(JOUR==ymd("2024-04-10")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 2")+
+  ylim(0,20)
+data_tot |> filter(JOUR==ymd("2024-04-11")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 3")+
+  ylim(0,20)
+data_tot |> filter(JOUR==ymd("2024-04-12")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 4")+
+  ylim(0,20)
+```
+ANOVA selon le jour
+
+```{r}
+anova_reponse_jour <- lm(pc1_response~JOUR_bis,data_tot=data_tot)
+plot(anova_reponse_jour)
+summary(anova_reponse_jour)
+kruskal.test(pc1_response~JOUR_bis,data_tot=data_tot) #test paramétrique
+bartlett.test(data_tot$pc1_response,data_tot$JOUR) #vérifie l'homoscédasticité
+estimate_contrasts(anova_reponse_jour,p_adjust = "none") #analyse par contraste
+```
+
+Distribution de la réponse pc1 selon si le mâle est vu avant la diffusion ou non
+
+```{r}
+data_tot |> filter(VU==1) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle vu avant") +
+  ylim(0,42)
+data_tot |> filter(VU==0) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle pas vu avant") +
+  ylim(0,42)
+```
+ANOVA selon si on a vu le mâle ou pas avant la diffusion
+
+```{r}
+anova_reponse_vu <- lm(pc1_response~VU,data_tot=data_tot)
+plot(anova_reponse_vu) #plot 
+summary(anova_reponse_vu)
+wilcox.test(data_tot$pc1_response,as.numeric(data_tot$VU)) #test non paramétrique
+bartlett.test(data_tot$pc1_response,as.numeric(data_tot$VU)) #vérifie l'homoscédasticité
+```
+
+Distribution de la réponse pc1 selon si la femelle est vue avant la diffusion ou non
+
+```{r}
+data_tot |> filter(FEMELLE==1) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Femelle présente") +
+  ylim(0,60)
+data_tot |> filter(FEMELLE==0) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Femelle absente") +
+  ylim(0,60)
+```
+ANOVA selon la présence ou l'absence de femelle
+
+```{r}
+anova_reponse_femelle <- lm(pc1_response~FEMELLE,data_tot=data_tot)
+plot(anova_reponse_femelle)
+summary(anova_reponse_femelle)
+wilcox.test(data_tot$pc1_response,as.numeric(data_tot$FEMELLE)) #test non paramétrique
+bartlett.test(data_tot$pc1_response,as.numeric(data_tot$FEMELLE)) #vérifie l'homoscédasticité
+```

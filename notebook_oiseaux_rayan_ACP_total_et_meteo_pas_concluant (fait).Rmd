@@ -1,0 +1,282 @@
+---
+title: "markdown_oiseau"
+output: html_document
+date: "2024-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(here)
+library(tidyverse)
+library(viridis)
+library(ade4)
+library(adegraphics)
+library(FactoMineR)
+library(factoextra)
+library(ggfortify)
+library(ggpubr)
+library(see)
+library(modelbased)
+```
+
+On crée le tableau de données à partir du fichier csv.
+
+```{r}
+data <- read_csv(
+  "data/raw_data.csv",
+  col_names = T,
+  col_types = "Dtfffffffiiiiiifididdi",
+  col_select = c(-23)
+  ) |> na.omit()
+
+data <- data |> mutate(LATENCE_MAJOREE=ifelse(LATENCE==10000,180,LATENCE),
+                       .after=c(12))
+data <- data |> mutate(DISTANCE_MAJOREE=ifelse(
+                       DISTANCE_MIN==10000,50,DISTANCE_MIN),
+                       .after=c(11))
+
+data <- data |> mutate(JOUR_bis=as.factor(day(JOUR)),
+                       .after=c(1))
+```
+
+## Quantifier la réaction des oiseaux
+On réalise une ACP pour quantifier la réponse des oiseaux
+
+```{r}
+ACP_response <- dudi.pca(data[,c(12,14,15,16,17)], center = T, scale = T, scannf=FALSE, nf = 2)
+
+s.corcircle(ACP_response$co, xax = 1, yax = 2) #On représente le plan avec les deux composantes expliquant le plus les variations de réponse des oiseaux
+
+fviz_screeplot(ACP_response, addlabels = TRUE, ylim = c(0, 70)) #On représente à quel point chacune des composantes de l'ACP explique les variations de réponse
+
+data <- data |> mutate(pc1_response = ACP_response$li$Axis1,.after=c(17)) #On ajoute une colonne dans le tableau de données avec les valeurs de pc1 qui explique plus de 50% des variations de réponse
+```
+
+On représente les résultats d'ACP selon les mâles
+
+```{r}
+fviz_pca_ind(ACP_response,
+             label = "none", # hide individual labels
+             habillage = factor(data$ID_MALE,c(1:5)), # color by groups
+             palette = c("#00AFBB", "#E7B800", "#FC4E07","green","purple"),
+             addEllipses = TRUE, # Concentration ellipses
+             title="PCA selon le mâle"
+             )
+```
+On représente les résultats d'ACP selon les jours
+
+```{r}
+fviz_pca_ind(ACP_response,
+             label = "none", # hide individual labels
+             habillage = data$JOUR, # color by groups
+             palette = c("#00AFBB", "#E7B800", "#FC4E07","green"),
+             addEllipses = TRUE, # Concentration ellipses
+             title="PCA selon le jour"
+             )
+```
+On représente les résultats d'ACP selon les types de diffusion
+
+```{r}
+fviz_pca_ind(ACP_response,
+             label = "none", # hide individual labels
+             habillage = data$DIFFUSION, # color by groups
+             palette = c("#00AFBB", "#E7B800", "#FC4E07","green","purple","pink"),
+             addEllipses = TRUE, # Concentration ellipses
+             title="PCA selon le type de diffusion"
+             )
+```
+
+On représente les résultats d'ACP selon si on a vu le mâle avant le début de la diffusion
+```{r}
+fviz_pca_ind(ACP_response,
+             label = "none", # hide individual labels
+             habillage = data$VU, # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipses
+             title="PCA selon la présence du mâle avant la diffusion"
+             )
+```
+On représente les résultats d'ACP selon si on a vu la femelle pendant la diffusion
+```{r}
+fviz_pca_ind(ACP_response,
+             label = "none", # hide individual labels
+             habillage = data$FEMELLE, # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipses
+             title="PCA selon la présence de femelle"
+             )
+```
+
+On représente la réponse des oiseaux (approximée par pc1) en fonction de différents facteurs
+
+```{r}
+#Effet mâle
+ggplot(data) + geom_boxplot(aes(x=factor(ID_MALE,c(1:5)), y=pc1_response)) +
+  labs(x="Mâle",title = "Effet mâle")+
+  theme_minimal()
+
+#Effet jour
+ggplot(data) + geom_boxplot(aes(x=as.factor(JOUR), y=pc1_response)) +
+  labs(x="Jour",title = "Effet jour")+
+  theme_minimal()
+
+#Effet vu
+stat_vu <- data.frame(group1="0",group2="1",
+                          text=paste0("p = 9.592e-06"))
+
+ggplot(data) + geom_boxplot(aes(x=VU, y=pc1_response)) +
+  labs(title = "Effet vu") +
+  stat_pvalue_manual(stat_vu,y.position = 3.8,label="text") +
+  theme_minimal()
+
+#Effet diffusion
+ggplot(data) + geom_boxplot(aes(x=DIFFUSION, y=pc1_response)) +
+  labs(title = "Effet diffusion")+
+  theme_minimal()
+
+#Effet femelle
+stat_femelle <- data.frame(group1="0",group2="1",
+                          text=paste0("p = 1.335e-07"))
+
+ggplot(data) + geom_boxplot(aes(x=factor(FEMELLE,c(0,1)), y=pc1_response))+
+  labs(x="Femelle",title = "Effet femelle")+
+  theme_minimal()+
+  stat_pvalue_manual(stat_femelle,y.position = 4,label="text")
+```
+
+Distribution de la réponse pc1 pour chaque mâle
+
+```{r}
+data |> filter(ID_MALE=="1") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 1")+
+  ylim(0,16)
+data |> filter(ID_MALE=="2") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 2")+
+  ylim(0,16)
+data |> filter(ID_MALE=="3") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 3")+
+  ylim(0,16)
+data |> filter(ID_MALE=="4") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 4")+
+  ylim(0,16)
+data |> filter(ID_MALE=="5") |> ggplot() + geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle 5")+
+  ylim(0,16)
+```
+ANOVA selon le mâle
+
+```{r}
+anova_reponse_male <- lm(pc1_response~ID_MALE,data=data)
+plot(anova_reponse_male)
+summary(anova_reponse_male)
+kruskal.test(pc1_response~ID_MALE,data=data) #test paramétrique
+bartlett.test(data$pc1_response,data$ID_MALE) #vérifie l'homoscédasticité
+estimate_contrasts(anova_reponse_male,p_adjust="none") #analyse par contraste
+```
+
+Distribution de la réponse pc1 pour chaque jour
+
+```{r}
+data |> filter(JOUR==ymd("2024-04-09")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 1")+
+  ylim(0,20)
+data |> filter(JOUR==ymd("2024-04-10")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 2")+
+  ylim(0,20)
+data |> filter(JOUR==ymd("2024-04-11")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 3")+
+  ylim(0,20)
+data |> filter(JOUR==ymd("2024-04-12")) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Jour 4")+
+  ylim(0,20)
+```
+ANOVA selon le jour
+
+```{r}
+anova_reponse_jour <- lm(pc1_response~JOUR_bis,data=data)
+plot(anova_reponse_jour)
+summary(anova_reponse_jour)
+kruskal.test(pc1_response~JOUR_bis,data=data) #test paramétrique
+bartlett.test(data$pc1_response,data$JOUR) #vérifie l'homoscédasticité
+estimate_contrasts(anova_reponse_jour,p_adjust = "none") #analyse par contraste
+```
+
+Distribution de la réponse pc1 selon si le mâle est vu avant la diffusion ou non
+
+```{r}
+data |> filter(VU==1) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle vu avant") +
+  ylim(0,42)
+data |> filter(VU==0) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Mâle pas vu avant") +
+  ylim(0,42)
+```
+ANOVA selon si on a vu le mâle ou pas avant la diffusion
+
+```{r}
+anova_reponse_vu <- lm(pc1_response~VU,data=data)
+plot(anova_reponse_vu) #plot 
+summary(anova_reponse_vu)
+wilcox.test(data$pc1_response,as.numeric(data$VU)) #test non paramétrique
+bartlett.test(data$pc1_response,as.numeric(data$VU)) #vérifie l'homoscédasticité
+```
+
+Distribution de la réponse pc1 selon si la femelle est vue avant la diffusion ou non
+
+```{r}
+data |> filter(FEMELLE==1) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Femelle présente") +
+  ylim(0,60)
+data |> filter(FEMELLE==0) |> ggplot() +
+  geom_histogram(aes(pc1_response)) +
+  labs(title="Femelle absente") +
+  ylim(0,60)
+```
+ANOVA selon la présence ou l'absence de femelle
+
+```{r}
+anova_reponse_femelle <- lm(pc1_response~FEMELLE,data=data)
+plot(anova_reponse_femelle)
+summary(anova_reponse_femelle)
+wilcox.test(data$pc1_response,as.numeric(data$FEMELLE)) #test non paramétrique
+bartlett.test(data$pc1_response,as.numeric(data$FEMELLE)) #vérifie l'homoscédasticité
+```
+
+
+
+##Quantification des variables météo
+On réalise une ACP pour synthétiser les variables météo
+
+```{r}
+ACP_weather <- dudi.pca(data[,21:25], center = T, scale = T, scannf=FALSE, nf = 2)
+
+s.corcircle(ACP_weather$co, xax = 1, yax = 2)
+
+s.label(ACP_weather$li, xax = 1, yax = 2)
+
+fviz_screeplot(ACP_weather, addlabels = TRUE, ylim = c(0, 70))
+
+data <- data |> mutate(pc1_weather = ACP_weather$li$Axis1,.after=c(25))
+```
+On représente la réponse des oiseaux en fonction de pc1_weather
+
+```{r}
+ggplot(data) + geom_point(aes(x=pc1_weather,y=pc1_response))
+ggplot(data) + geom_point(aes(x=pc1_weather,y=STROPHES_AVANT))
+ggplot(data) + geom_point(aes(x=pc1_weather,y=STROPHES_APRES))
+ggplot(data) + geom_point(aes(x=pc1_weather,y=CRIS))
+ggplot(data) + geom_point(aes(x=pc1_weather,y=LATENCE_MAJOREE))
+ggplot(data) + geom_point(aes(x=pc1_weather,y=DISTANCE_MAJOREE))
+ggplot(data) + geom_point(aes(x=pc1_weather,y=SURVOLS))
+```
+
